@@ -156,15 +156,25 @@ def ingest_dataframe(df: pd.DataFrame):
         'city', 'technician', 'sequence', 'serial', 'issues'
     ]].itertuples(index=False, name=None))
 
+    # free the dataframes before the DB step to reduce peak memory
+    del work
+    del df
+
     conn = get_conn()
     before = conn.total_changes
-    conn.executemany(
-        """INSERT OR IGNORE INTO tag_events
-           (tag_number, timestamp, date, time, state, center, city, technician, sequence, serial, issues)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-        records
-    )
-    conn.commit()
+
+    # insert in batches instead of one giant executemany, and commit incrementally
+    BATCH_SIZE = 20000
+    for i in range(0, len(records), BATCH_SIZE):
+        batch = records[i:i + BATCH_SIZE]
+        conn.executemany(
+            """INSERT OR IGNORE INTO tag_events
+               (tag_number, timestamp, date, time, state, center, city, technician, sequence, serial, issues)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            batch
+        )
+        conn.commit()
+
     inserted = conn.total_changes - before
     skipped = len(records) - inserted
     conn.close()
@@ -179,20 +189,37 @@ async def upload_file(passcode: str = Form(...), file: UploadFile = File(...)):
     content = await file.read()
     filename = file.filename or ""
 
+    total_rows = 0
+    total_inserted = 0
+    total_skipped = 0
+
     try:
         if filename.lower().endswith(".csv"):
-            df = pd.read_csv(io.BytesIO(content))
+            # Stream the CSV in chunks so we never hold the whole file in memory at once —
+            # important on memory-constrained free hosting tiers.
+            reader = pd.read_csv(io.BytesIO(content), chunksize=50000)
+            del content  # free the raw bytes now that pandas has its own buffer
+            for chunk_df in reader:
+                total_rows += len(chunk_df)
+                inserted, skipped = ingest_dataframe(chunk_df)
+                total_inserted += inserted
+                total_skipped += skipped
         else:
             df = pd.read_excel(io.BytesIO(content))
+            del content
+            total_rows = len(df)
+            total_inserted, total_skipped = ingest_dataframe(df)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Could not parse file: {e}")
 
-    try:
-        inserted, skipped = ingest_dataframe(df)
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
-
-    return {"filename": filename, "rows_in_file": len(df), "inserted": inserted, "skipped_duplicates": skipped}
+    return {
+        "filename": filename,
+        "rows_in_file": total_rows,
+        "inserted": total_inserted,
+        "skipped_duplicates": total_skipped
+    }
 
 
 @app.get("/api/tag/{tag_number}")
