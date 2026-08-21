@@ -1,0 +1,252 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Tag History</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:#F7F8FA; --panel:#FFFFFF; --panel2:#F1F3F6; --line:#DDE1E7;
+    --text:#1B2027; --text-dim:#4B5563;
+    --amber:#C9691F; --green:#1F8F63; --grey:#6B7280;
+    --blue:#3568C4; --gold:#9A7412; --red:#C4402F;
+    --header-bg:#161B22; --header-text:#EDEFF3; --header-amber:#E8823A;
+  }
+  *{margin:0;padding:0;box-sizing:border-box;}
+  body{background:var(--bg); color:var(--text); font-family:'IBM Plex Sans',sans-serif; -webkit-font-smoothing:antialiased;}
+  .mono{font-family:'IBM Plex Mono',monospace;}
+
+  header{
+    padding: 22px 24px 16px;
+    background: var(--header-bg);
+    display:flex; align-items:center; justify-content:space-between;
+  }
+  .eyebrow{ font-family:'IBM Plex Mono',monospace; font-size:11px; letter-spacing:.12em; color:var(--header-amber); text-transform:uppercase; margin-bottom:4px; }
+  h1{ font-size:22px; font-weight:600; color:var(--header-text); }
+
+  main{ max-width: 720px; margin: 0 auto; padding: 22px 18px 60px; }
+
+  .stats-bar{
+    font-size:12px; color:var(--text-dim); font-family:'IBM Plex Mono',monospace;
+    margin-bottom:16px;
+  }
+
+  .slicer-panel{
+    display:flex; align-items:center; gap:10px;
+    background:var(--panel); border:1px solid var(--line); border-radius:10px;
+    padding:10px 16px; margin-bottom:14px; flex-wrap:wrap;
+  }
+  .slicer-panel label{ font-size:11px; text-transform:uppercase; letter-spacing:.05em; color:var(--text-dim); }
+  .slicer-panel select{
+    flex:1; min-width:160px; background:var(--panel2); border:1px solid var(--line);
+    border-radius:7px; padding:8px 10px; font-size:13px; color:var(--text);
+  }
+
+  .search-panel{ background:var(--panel); border:1px solid var(--line); border-radius:10px; padding:16px 18px; margin-bottom:16px; }
+  .combo{ position:relative; }
+  input#tagInput{
+    width:100%; background:var(--panel2); border:1px solid var(--line); border-radius:8px;
+    padding:12px 14px; font-family:'IBM Plex Mono',monospace; font-size:15px; color:var(--text); outline:none;
+  }
+  input#tagInput:focus{ border-color:var(--amber); }
+  .suggestions{
+    position:absolute; top:calc(100% + 6px); left:0; right:0; background:var(--panel2);
+    border:1px solid var(--line); border-radius:8px; max-height:240px; overflow-y:auto; z-index:10; display:none;
+  }
+  .suggestions.show{ display:block; }
+  .suggestions div{ padding:9px 14px; font-family:'IBM Plex Mono',monospace; font-size:13.5px; cursor:pointer; border-bottom:1px solid var(--line); }
+  .suggestions div:last-child{ border-bottom:none; }
+  .suggestions div:hover{ background:#E9ECF0; color:var(--amber); }
+
+  .status-line{ font-size:12.5px; color:var(--text-dim); margin-top:8px; min-height:16px; }
+  .status-line.err{ color:var(--red); }
+
+  .tag-block{ background:var(--panel); border:1px solid var(--line); border-radius:10px; padding:18px 20px; margin-bottom:16px; }
+  .tag-head{ display:flex; justify-content:space-between; align-items:center; margin-bottom:10px; flex-wrap:wrap; gap:8px; }
+  .tag-id{ font-family:'IBM Plex Mono',monospace; font-size:19px; font-weight:600; }
+  .status-chip{ font-family:'IBM Plex Mono',monospace; font-size:12.5px; font-weight:600; padding:6px 14px; border-radius:20px; text-transform:uppercase; }
+  .meta-row{ display:flex; gap:18px; font-size:12px; color:var(--text-dim); flex-wrap:wrap; margin-bottom:12px; }
+  .meta-row b{ color:var(--text); }
+
+  .events{ position:relative; padding-left:20px; }
+  .events::before{ content:""; position:absolute; left:5px; top:6px; bottom:6px; width:2px; background:var(--line); }
+  .event{ position:relative; padding-bottom:16px; }
+  .event:last-child{ padding-bottom:0; }
+  .event::before{ content:""; position:absolute; left:-20px; top:4px; width:11px; height:11px; border-radius:50%; background:var(--dot,var(--grey)); border:2px solid var(--bg); box-shadow:0 0 0 1px var(--line); }
+  .event .date{ font-family:'IBM Plex Mono',monospace; font-size:11.5px; color:var(--text-dim); }
+  .event .state{ font-weight:600; font-size:13.5px; margin-left:8px; }
+  .event .detail{ font-size:12px; color:var(--text-dim); margin-top:2px; }
+  .event .issues{ margin-top:5px; font-size:12px; background:var(--panel2); display:inline-block; padding:4px 9px; border-radius:6px; border:1px solid var(--line); }
+
+  .empty-state{ text-align:center; color:var(--text-dim); font-size:13px; padding:36px 0; }
+</style>
+</head>
+<body>
+
+<header>
+  <div>
+    <div class="eyebrow">Recircle · Tag Log</div>
+    <h1>Tag History</h1>
+  </div>
+</header>
+
+<main>
+  <div class="stats-bar" id="statsBar">Loading…</div>
+
+  <div class="slicer-panel">
+    <label for="centerFilter">Center</label>
+    <select id="centerFilter"><option value="">All centers</option></select>
+  </div>
+
+  <div class="search-panel">
+    <div class="combo">
+      <input type="text" id="tagInput" class="mono" placeholder="Type a tag number…" autocomplete="off">
+      <div class="suggestions" id="suggestions"></div>
+    </div>
+    <div class="status-line" id="statusLine"></div>
+  </div>
+
+  <div id="result"></div>
+  <div class="empty-state" id="emptyState">Type a tag number above to see its full history.</div>
+</main>
+
+<script>
+const STATE_COLORS = {
+  FAULTY: '#C9691F', RETIRED: '#6B7280', READY_TO_USE: '#1F8F63',
+  REPAIRED: '#3568C4', TO_SHIP_TO_VENDOR_REPAIR_USED: '#9A7412', RECEIVED_SHORTAGE: '#C4402F'
+};
+const STATE_LABELS = {
+  FAULTY: 'Faulty', RETIRED: 'Retired', READY_TO_USE: 'Ready to use',
+  REPAIRED: 'Repaired', TO_SHIP_TO_VENDOR_REPAIR_USED: 'Shipped to vendor', RECEIVED_SHORTAGE: 'Received shortage'
+};
+
+const input = document.getElementById('tagInput');
+const suggestions = document.getElementById('suggestions');
+const centerFilter = document.getElementById('centerFilter');
+const statusLine = document.getElementById('statusLine');
+const resultEl = document.getElementById('result');
+const emptyState = document.getElementById('emptyState');
+const statsBar = document.getElementById('statsBar');
+
+let debounceTimer = null;
+
+async function loadStats(){
+  try {
+    const res = await fetch('/api/stats');
+    const data = await res.json();
+    statsBar.textContent = `${data.total_tags} tags · ${data.total_events} events on file`;
+  } catch(e){
+    statsBar.textContent = 'Could not reach the server.';
+  }
+}
+
+async function loadCenters(){
+  try {
+    const res = await fetch('/api/centers');
+    const data = await res.json();
+    centerFilter.innerHTML = '<option value="">All centers</option>' +
+      data.centers.map(c => `<option value="${c}">${c}</option>`).join('');
+  } catch(e){ /* ignore */ }
+}
+
+input.addEventListener('input', () => {
+  clearTimeout(debounceTimer);
+  const q = input.value.trim();
+  if(q.length < 1){ suggestions.classList.remove('show'); return; }
+  debounceTimer = setTimeout(async () => {
+    try {
+      const params = new URLSearchParams({ prefix: q, limit: 20 });
+      if(centerFilter.value) params.set('center', centerFilter.value);
+      const res = await fetch('/api/search?' + params.toString());
+      const data = await res.json();
+      renderSuggestions(data.tags);
+    } catch(e){ /* ignore */ }
+  }, 200);
+});
+
+function renderSuggestions(tags){
+  if(tags.length === 0){ suggestions.classList.remove('show'); suggestions.innerHTML = ''; return; }
+  suggestions.innerHTML = tags.map(t => `<div data-tag="${t}">${t}</div>`).join('');
+  suggestions.classList.add('show');
+}
+
+suggestions.addEventListener('click', (e) => {
+  const div = e.target.closest('div[data-tag]');
+  if(!div) return;
+  input.value = div.dataset.tag;
+  suggestions.classList.remove('show');
+  lookupTag(div.dataset.tag);
+});
+
+input.addEventListener('keydown', (e) => {
+  if(e.key === 'Enter'){
+    e.preventDefault();
+    suggestions.classList.remove('show');
+    lookupTag(input.value.trim());
+  }
+});
+
+document.addEventListener('click', (e) => {
+  if(!e.target.closest('.combo')) suggestions.classList.remove('show');
+});
+
+async function lookupTag(tag){
+  if(!tag) return;
+  statusLine.textContent = 'Searching…';
+  statusLine.className = 'status-line';
+  try {
+    const res = await fetch('/api/tag/' + encodeURIComponent(tag));
+    if(res.status === 404){
+      statusLine.textContent = `Tag "${tag}" not found.`;
+      statusLine.className = 'status-line err';
+      resultEl.innerHTML = '';
+      emptyState.style.display = 'block';
+      return;
+    }
+    const data = await res.json();
+    statusLine.textContent = '';
+    emptyState.style.display = 'none';
+    resultEl.innerHTML = buildTagBlock(data.tag, data.events);
+  } catch(e){
+    statusLine.textContent = 'Could not reach the server.';
+    statusLine.className = 'status-line err';
+  }
+}
+
+function buildTagBlock(tag, events){
+  const latest = events[events.length - 1];
+  const color = STATE_COLORS[latest.state] || '#666';
+  const label = STATE_LABELS[latest.state] || latest.state;
+
+  const eventsHtml = events.map(ev => `
+    <div class="event" style="--dot:${STATE_COLORS[ev.state]||'#666'}">
+      <span class="date">${ev.date} · ${ev.time}</span>
+      <span class="state" style="color:${STATE_COLORS[ev.state]||'#666'}">${STATE_LABELS[ev.state]||ev.state}</span>
+      <div class="detail">${ev.center||''} · ${ev.city||''} · logged by ${ev.technician||''}${ev.sequence>1?' · sequence '+ev.sequence:''}</div>
+      ${ev.issues ? `<div class="issues">${ev.issues}</div>` : ''}
+    </div>
+  `).join('');
+
+  return `
+    <div class="tag-block">
+      <div class="tag-head">
+        <div class="tag-id mono">${tag}</div>
+        <div class="status-chip" style="background:${color}22; color:${color}; border:1px solid ${color}55;">${label}</div>
+      </div>
+      <div class="meta-row">
+        <div>Center <b>${latest.center||''}</b></div>
+        ${latest.serial ? `<div>Serial <b class="mono">${latest.serial}</b></div>` : ''}
+        <div>Last updated <b>${latest.date} ${latest.time}</b></div>
+      </div>
+      <div class="events">${eventsHtml}</div>
+    </div>
+  `;
+}
+
+loadStats();
+loadCenters();
+</script>
+
+</body>
+</html>
